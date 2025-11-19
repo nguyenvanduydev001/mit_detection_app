@@ -1,6 +1,7 @@
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '/widgets/custom_input.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -18,6 +19,98 @@ class _RegisterPageState extends State<RegisterPage> {
   bool obscure1 = true;
   bool obscure2 = true;
 
+  late FToast fToast;
+
+  @override
+  void initState() {
+    super.initState();
+    fToast = FToast();
+    fToast.init(context);
+  }
+
+  // -------------------------------
+  // TOAST ĐẸP (premium)
+  // -------------------------------
+  void showToast(String message, {bool success = false}) {
+    Widget toast = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            success ? Icons.check_circle : Icons.error,
+            color: success ? const Color(0xFF6DBE45) : Colors.red,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.black87, fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    fToast.showToast(
+      child: toast,
+      gravity: ToastGravity.BOTTOM,
+      toastDuration: const Duration(seconds: 2),
+    );
+  }
+
+  // --------------------------------
+  // HANDLE REGISTER
+  // --------------------------------
+  Future<void> handleRegister() async {
+    final email = emailCtrl.text.trim();
+    final pass = passCtrl.text.trim();
+    final confirm = confirmCtrl.text.trim();
+
+    if (email.isEmpty || pass.isEmpty || confirm.isEmpty) {
+      showToast("Vui lòng nhập đầy đủ thông tin!");
+      return;
+    }
+
+    if (pass.length < 6) {
+      showToast("Mật khẩu cần ít nhất 6 ký tự!");
+      return;
+    }
+
+    if (pass != confirm) {
+      showToast("Mật khẩu không khớp!", success: false);
+      return;
+    }
+
+    try {
+      await Supabase.instance.client.auth.signUp(email: email, password: pass);
+
+      showToast(
+        "Đăng ký thành công! Hãy kiểm tra email để xác thực.",
+        success: true,
+      );
+
+      Navigator.pushReplacementNamed(context, "/login");
+    } catch (e) {
+      showToast("Lỗi: $e");
+    }
+  }
+
+  // --------------------------------
+  // UI BUILD
+  // --------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -68,54 +161,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
             const SizedBox(height: 30),
 
+            // Nút đăng ký
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: () async {
-                  final email = emailCtrl.text.trim();
-                  final pass = passCtrl.text.trim();
-                  final confirm = confirmCtrl.text.trim();
-
-                  if (email.isEmpty || pass.isEmpty || confirm.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Vui lòng nhập đầy đủ thông tin"),
-                      ),
-                    );
-                    return;
-                  }
-
-                  if (pass != confirm) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Mật khẩu không khớp")),
-                    );
-                    return;
-                  }
-
-                  try {
-                    await Supabase.instance.client.auth.signUp(
-                      email: email,
-                      password: pass,
-                    );
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          "Đăng ký thành công! Hãy kiểm tra email để xác thực.",
-                        ),
-                        duration: Duration(seconds: 4),
-                      ),
-                    );
-
-                    Navigator.pushReplacementNamed(context, "/login");
-                  } catch (e) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
-                  }
-                },
-
+                onPressed: handleRegister,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6DBE45),
                   foregroundColor: Colors.white,

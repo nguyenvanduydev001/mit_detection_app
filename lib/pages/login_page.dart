@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '/widgets/custom_input.dart';
 
 class LoginPage extends StatefulWidget {
@@ -16,6 +17,98 @@ class _LoginPageState extends State<LoginPage> {
 
   bool obscure = true;
 
+  late FToast fToast;
+
+  @override
+  void initState() {
+    super.initState();
+    fToast = FToast();
+    fToast.init(context);
+  }
+
+  // -------------------------
+  // TOAST xịn
+  // -------------------------
+  void showToast(String message, {bool success = false}) {
+    Widget toast = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            success ? Icons.check_circle : Icons.error,
+            color: success ? const Color(0xFF6DBE45) : Colors.red,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.black87, fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    fToast.showToast(
+      child: toast,
+      gravity: ToastGravity.BOTTOM,
+      toastDuration: const Duration(seconds: 2),
+    );
+  }
+
+  // -------------------------
+  // Handle Login
+  // -------------------------
+  Future<void> handleLogin() async {
+    final email = emailCtrl.text.trim();
+    final pass = passCtrl.text.trim();
+
+    if (email.isEmpty || pass.isEmpty) {
+      showToast("Vui lòng nhập đầy đủ thông tin!");
+      return;
+    }
+
+    try {
+      final res = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: pass,
+      );
+
+      final user = res.user;
+
+      if (user == null) {
+        showToast("Không tìm thấy người dùng!");
+        return;
+      }
+
+      if (user.emailConfirmedAt == null) {
+        showToast("Email chưa được xác thực! Vui lòng kiểm tra hộp thư.");
+        return;
+      }
+
+      showToast("Đăng nhập thành công!", success: true);
+      Navigator.pushReplacementNamed(context, "/home");
+    } catch (e) {
+      showToast("Sai email hoặc mật khẩu!");
+    }
+  }
+
+  // -------------------------
+  // UI
+  // -------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,50 +158,7 @@ class _LoginPageState extends State<LoginPage> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () async {
-                    final email = emailCtrl.text.trim();
-                    final pass = passCtrl.text.trim();
-
-                    if (email.isEmpty || pass.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("Vui lòng nhập đầy đủ thông tin"),
-                        ),
-                      );
-                      return;
-                    }
-
-                    try {
-                      final res = await Supabase.instance.client.auth
-                          .signInWithPassword(email: email, password: pass);
-
-                      final user = res.user;
-
-                      if (user == null) {
-                        throw "Không tìm thấy người dùng";
-                      }
-
-                      if (user.emailConfirmedAt == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              "Email chưa được xác thực! Vui lòng kiểm tra email của bạn.",
-                            ),
-                            duration: Duration(seconds: 4),
-                          ),
-                        );
-                        return;
-                      }
-
-                      Navigator.pushReplacementNamed(context, "/home");
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("Sai email hoặc mật khẩu"),
-                        ),
-                      );
-                    }
-                  },
+                  onPressed: handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6DBE45),
                     foregroundColor: Colors.white,
