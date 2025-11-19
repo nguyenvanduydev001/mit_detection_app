@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-import 'change_password_page.dart';
 
 const primaryColor = Color(0xFF6DBE45);
 
 class AccountPage extends StatelessWidget {
   const AccountPage({super.key});
 
-  // Hàm format thời gian đẹp
   String formatDate(String isoString) {
     final date = DateTime.parse(isoString).toLocal();
     return DateFormat('dd/MM/yyyy - HH:mm').format(date);
@@ -24,7 +22,6 @@ class AccountPage extends StatelessWidget {
         title: const Text("Thông tin tài khoản"),
         centerTitle: true,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
       ),
       body: user == null
           ? const Center(child: Text("Không tìm thấy người dùng"))
@@ -32,10 +29,8 @@ class AccountPage extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  // Avatar
                   CircleAvatar(
                     radius: 48,
-                    // ignore: deprecated_member_use
                     backgroundColor: primaryColor.withOpacity(0.25),
                     child: Text(
                       user.email![0].toUpperCase(),
@@ -49,7 +44,6 @@ class AccountPage extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
-                  // Email
                   Text(
                     user.email ?? "",
                     style: const TextStyle(
@@ -60,7 +54,6 @@ class AccountPage extends StatelessWidget {
 
                   const SizedBox(height: 28),
 
-                  // Card thông tin
                   Card(
                     elevation: 3,
                     shape: RoundedRectangleBorder(
@@ -81,12 +74,7 @@ class AccountPage extends StatelessWidget {
                                 : "Đã xác thực",
                           ),
                           const Divider(),
-                          _infoRow(
-                            "Tham gia lúc",
-                            user.createdAt != null
-                                ? formatDate(user.createdAt!)
-                                : "Không rõ",
-                          ),
+                          _infoRow("Tham gia lúc", formatDate(user.createdAt)),
                         ],
                       ),
                     ),
@@ -94,34 +82,6 @@ class AccountPage extends StatelessWidget {
 
                   const SizedBox(height: 30),
 
-                  // Nút đổi mật khẩu
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ChangePasswordPage(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      minimumSize: const Size(double.infinity, 50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: const Icon(Icons.lock_reset, color: Colors.white),
-                    label: const Text(
-                      "Đổi mật khẩu",
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // Nút đăng xuất
                   OutlinedButton.icon(
                     onPressed: () async {
                       await Supabase.instance.client.auth.signOut();
@@ -149,7 +109,6 @@ class AccountPage extends StatelessWidget {
     );
   }
 
-  // Custom row thông tin
   Widget _infoRow(String title, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),

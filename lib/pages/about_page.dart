@@ -45,7 +45,9 @@ class AboutPage extends StatelessWidget {
               const SizedBox(height: 12),
 
               feature("Nhận dạng hình ảnh chính xác bằng mô hình AI YOLOv8."),
-              feature("Kiểm tra độ chín theo 3 mức: Non – Vừa – Chín."),
+              feature(
+                "Kiểm tra độ chín theo 3 mức: Mít Chín - Mít Sâu Bệnh - Mít Non.",
+              ),
               feature("Hỗ trợ chụp ảnh trực tiếp từ Camera/Webcam."),
               feature("Xem biểu đồ thống kê và so sánh kết quả."),
               feature("Trò chuyện với chatbot AgriVision hỗ trợ nông nghiệp."),

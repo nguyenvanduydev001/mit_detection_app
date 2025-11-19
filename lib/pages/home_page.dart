@@ -9,6 +9,7 @@ import '/pages/yolov8_page.dart';
 import '/pages/chat_page.dart';
 import '/pages/account_page.dart';
 import '/pages/about_page.dart';
+import '/pages/settings_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -73,20 +74,15 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
 
-                  // Đăng xuất
+                  // Cài đặt
                   MenuItem(
-                    icon: Icons.logout,
-                    title: "Đăng xuất",
-                    subtitle: "Thoát tài khoản",
-                    onTap: () async {
-                      await Supabase.instance.client.auth.signOut();
-
-                      Navigator.pushNamedAndRemoveUntil(
-                        context,
-                        "/login",
-                        (route) => false,
-                      );
-                    },
+                    icon: Icons.settings,
+                    title: "Cài đặt",
+                    subtitle: "Tùy chỉnh ứng dụng",
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsPage()),
+                    ),
                   ),
 
                   // Phân tích ảnh
@@ -138,10 +134,17 @@ class HomePage extends StatelessWidget {
                     icon: Icons.chat,
                     title: "Chat\nAgriVision",
                     subtitle: "Tương tác AI",
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ChatPage()),
-                    ),
+                    onTap: () {
+                      final user = Supabase.instance.client.auth.currentUser;
+                      if (user == null) return;
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage(userId: user.id),
+                        ),
+                      );
+                    },
                   ),
 
                   // Tài khoản
