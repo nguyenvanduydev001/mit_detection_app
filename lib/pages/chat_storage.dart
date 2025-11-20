@@ -11,14 +11,29 @@ class ChatStorage {
         .eq("user_id", userId)
         .order("created_at", ascending: true);
 
+    Uint8List? decodeHex(String? hex) {
+      if (hex == null) return null;
+
+      // Supabase trả về dạng: \xAB12CD
+      hex = hex.replaceFirst(r'\x', '');
+
+      final length = hex.length;
+      final bytes = <int>[];
+
+      for (int i = 0; i < length; i += 2) {
+        final part = hex.substring(i, i + 2);
+        bytes.add(int.parse(part, radix: 16));
+      }
+
+      return Uint8List.fromList(bytes);
+    }
+
     return res.map((e) {
       return {
         "role": e["role"],
         "text": e["text"],
         "filename": e["filename"],
-        "file": e["file_bytes"] == null
-            ? null
-            : Uint8List.fromList(List<int>.from(e["file_bytes"])),
+        "file": decodeHex(e["file_bytes"]),
       };
     }).toList();
   }

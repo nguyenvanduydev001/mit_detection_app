@@ -19,7 +19,10 @@ class AccountPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: primaryColor,
-        title: const Text("Thông tin tài khoản"),
+        title: const Text(
+          "Thông tin tài khoản",
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
         centerTitle: true,
         foregroundColor: Colors.white,
       ),

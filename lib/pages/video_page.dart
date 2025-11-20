@@ -104,7 +104,7 @@ class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
         centerTitle: true,
         title: const Text(
           "Phân tích Video / Webcam",
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: Colors.white, fontSize: 18),
         ),
         foregroundColor: Colors.white,
       ),

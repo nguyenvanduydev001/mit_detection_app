@@ -79,7 +79,10 @@ class _SettingsPageState extends State<SettingsPage> {
         backgroundColor: const Color(0xFF6DBE45),
         elevation: 0,
         centerTitle: true,
-        title: const Text("Cài đặt", style: TextStyle(color: Colors.white)),
+        title: const Text(
+          "Cài đặt",
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
@@ -159,6 +162,32 @@ class _SettingsPageState extends State<SettingsPage> {
               await ChatStorage.clearMessages(user.id);
 
               showToast("Đã xoá lịch sử chat");
+            },
+          ),
+
+          _buildNavTile(
+            icon: Icons.delete_sweep,
+            title: "Xóa lịch sử so sánh mô hình",
+            subtitle: "Xóa toàn bộ lịch sử so sánh",
+            onTap: () async {
+              final supabase = Supabase.instance.client;
+              final user = supabase.auth.currentUser;
+
+              if (user == null) {
+                showToast("Bạn chưa đăng nhập!", success: false);
+                return;
+              }
+
+              try {
+                await supabase
+                    .from("compare_history")
+                    .delete()
+                    .eq("user_id", user.id);
+
+                showToast("Đã xoá toàn bộ lịch sử so sánh");
+              } catch (e) {
+                showToast("Lỗi khi xóa!", success: false);
+              }
             },
           ),
 

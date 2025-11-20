@@ -92,7 +92,15 @@ class _ChatPageState extends State<ChatPage> {
     scrollDown();
 
     try {
-      final r = await model.generateContent([Content.text(text)]);
+      final r = await model.generateContent([
+        Content.text(
+          "Bạn là AgriVision – trợ lý AI chuyên về nông nghiệp, cây trồng, đặc biệt là cây mít. "
+          "Hãy trả lời một cách rõ ràng, đúng chuyên môn, tránh lan man. "
+          "Nếu câu hỏi không thuộc lĩnh vực nông nghiệp thì hãy nhẹ nhàng hướng người dùng quay lại chủ đề.",
+        ),
+        Content.text(text),
+      ]);
+
       final answer = formatText(r.text ?? "AI không phản hồi.");
 
       setState(() {
@@ -140,7 +148,9 @@ class _ChatPageState extends State<ChatPage> {
     final content = [
       Content.multi([
         TextPart(
-          "Phân tích trái mít: nhận dạng, mức độ chín, sâu bệnh, số lượng trái, khuyến nghị chăm sóc.",
+          "Bạn là AgriVision – AI chuyên phân tích hình ảnh nông nghiệp. "
+          "Hãy phân tích trái mít trong ảnh: giống, độ chín, sâu bệnh, kích thước, khuyến nghị chăm sóc. "
+          "Chỉ trả lời đúng chuyên môn.",
         ),
         DataPart("image/jpeg", bytes),
       ]),
@@ -175,7 +185,10 @@ class _ChatPageState extends State<ChatPage> {
         backgroundColor: const Color(0xFF6DBE45),
         foregroundColor: Colors.white,
         centerTitle: true,
-        title: const Text("AgriVision Chat AI"),
+        title: const Text(
+          "AgriVision Chat AI",
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
       ),
 
       body: Column(
@@ -297,6 +310,12 @@ class _TypingState extends State<_Typing> with SingleTickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat();
+  }
+
+  @override
+  void dispose() {
+    ctrl.dispose();
+    super.dispose();
   }
 
   @override

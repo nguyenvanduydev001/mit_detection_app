@@ -5,7 +5,7 @@ import '/widgets/menu_item.dart';
 import '/pages/image_page.dart';
 import '/pages/video_page.dart';
 import '/pages/stat_page.dart';
-import '/pages/yolov8_page.dart';
+import '/pages/compare_page.dart';
 import '/pages/chat_page.dart';
 import '/pages/account_page.dart';
 import '/pages/about_page.dart';
@@ -43,7 +43,7 @@ class HomePage extends StatelessWidget {
                     Text(
                       "Chào mừng đến AgriVision!",
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: 20,
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
                       ),
@@ -125,7 +125,7 @@ class HomePage extends StatelessWidget {
                     subtitle: "Đánh giá model",
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => YoloV8Page()),
+                      MaterialPageRoute(builder: (_) => ComparePage()),
                     ),
                   ),
 
