@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- ⭐ Quyền CAMERA + GALLERY -->
+    <!-- CAMERA + GALLERY -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -36,14 +36,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- ⭐ SUPABASE DEEP LINK CALLBACK -->
+            <!-- ⭐ Deep link cho Supabase email verification -->
             <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW"/>
+                <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
+
+                <!-- Custom Scheme -->
                 <data
-                    android:scheme="io.agri.vision"
-                    android:host="login-callback"/>
+                    android:scheme="agrivision"
+                    android:host="account-verified" />
             </intent-filter>
 
         </activity>
