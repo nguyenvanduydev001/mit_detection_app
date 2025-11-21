@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'chat_storage.dart';
 
 class ChatPage extends StatefulWidget {
@@ -28,7 +29,7 @@ class _ChatPageState extends State<ChatPage> {
 
     model = GenerativeModel(
       model: "gemini-2.5-flash",
-      apiKey: "AIzaSyC6Fh_Z63bF_dcveWqXJvelRYJVPTt7Vyg",
+      apiKey: dotenv.env['GEMINI_API_KEY']!,
     );
 
     loadHistory();

@@ -42,6 +42,7 @@ flutter:
     - assets/images/sample_ripen.png
     - assets/images/sample_unripe.png
     - assets/images/sample_disease.png
+    - .env
 
 flutter_launcher_icons:
   android: true
