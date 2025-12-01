@@ -12,6 +12,42 @@ class AccountPage extends StatelessWidget {
     return DateFormat('dd/MM/yyyy - HH:mm').format(date);
   }
 
+  Future<bool> confirmLogout(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: const Text(
+              "Xác nhận đăng xuất",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: const Text(
+              "Bạn có chắc chắn muốn đăng xuất khỏi tài khoản không?",
+            ),
+            actions: [
+              TextButton(
+                child: const Text(
+                  "Hủy",
+                  style: TextStyle(color: Colors.black54),
+                ),
+                onPressed: () => Navigator.pop(context, false),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Đăng xuất"),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
@@ -32,6 +68,7 @@ class AccountPage extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
+                  // Avatar
                   CircleAvatar(
                     radius: 48,
                     backgroundColor: primaryColor.withOpacity(0.25),
@@ -47,6 +84,7 @@ class AccountPage extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
+                  // Email
                   Text(
                     user.email ?? "",
                     style: const TextStyle(
@@ -57,6 +95,7 @@ class AccountPage extends StatelessWidget {
 
                   const SizedBox(height: 28),
 
+                  // Info Card
                   Card(
                     elevation: 3,
                     shape: RoundedRectangleBorder(
@@ -85,8 +124,12 @@ class AccountPage extends StatelessWidget {
 
                   const SizedBox(height: 30),
 
+                  // Đăng xuất
                   OutlinedButton.icon(
                     onPressed: () async {
+                      final confirm = await confirmLogout(context);
+                      if (!confirm) return;
+
                       await Supabase.instance.client.auth.signOut();
                       if (context.mounted) {
                         Navigator.pushReplacementNamed(context, "/login");

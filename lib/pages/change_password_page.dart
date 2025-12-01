@@ -70,9 +70,44 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     );
   }
 
-  // -----------------------------
+  // ==============================
+  // POPUP XÁC NHẬN
+  // ==============================
+  Future<bool> confirmChange(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: const Text(
+              "Xác nhận đổi mật khẩu",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: const Text("Bạn có chắc muốn đổi mật khẩu không?"),
+            actions: [
+              TextButton(
+                child: const Text(
+                  "Hủy",
+                  style: TextStyle(color: Colors.black54),
+                ),
+                onPressed: () => Navigator.pop(context, false),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Đồng ý"),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  // ==============================
   // Xử lý đổi mật khẩu
-  // -----------------------------
+  // ==============================
   Future<void> changePassword() async {
     final client = Supabase.instance.client;
 
@@ -119,9 +154,6 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     setState(() => loading = false);
   }
 
-  // -----------------------------
-  // UI Input
-  // -----------------------------
   InputDecoration _field(String label, bool show, VoidCallback toggle) {
     return InputDecoration(
       labelText: label,
@@ -148,19 +180,18 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     );
   }
 
-  // -----------------------------
-  // UI BUILD
-  // -----------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8F2),
       appBar: AppBar(
-        title: const Text("Đổi mật khẩu"),
+        title: const Text(
+          "Đổi mật khẩu",
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
         centerTitle: true,
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: true,
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
@@ -181,7 +212,6 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Mật khẩu cũ
                 TextField(
                   controller: oldPass,
                   obscureText: !showOld,
@@ -194,7 +224,6 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
                 const SizedBox(height: 18),
 
-                // Mật khẩu mới
                 TextField(
                   controller: newPass,
                   obscureText: !showNew,
@@ -207,7 +236,6 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
                 const SizedBox(height: 18),
 
-                // Nhập lại mật khẩu
                 TextField(
                   controller: confirmPass,
                   obscureText: !showConfirm,
@@ -220,12 +248,16 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
 
                 const SizedBox(height: 28),
 
-                // Nút xác nhận
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
-                    onPressed: loading ? null : changePassword,
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            final ok = await confirmChange(context);
+                            if (ok) changePassword();
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
                       shape: RoundedRectangleBorder(

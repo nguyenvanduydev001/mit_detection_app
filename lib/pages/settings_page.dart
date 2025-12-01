@@ -21,10 +21,8 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     fToast = FToast();
-    // ❗ KHÔNG init(context) ở đây nữa — dễ lỗi context null khi navigate
   }
 
-  // TOAST GIỮ NGUYÊN ĐẸP NHƯ CŨ
   void showToast(String message, {bool success = true}) {
     fToast.removeQueuedCustomToasts();
 
@@ -67,9 +65,41 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  // ===== POPUP XÁC NHẬN =====
+  Future<bool> confirmDialog(String title) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+            ),
+            title: Text(
+              "Xác nhận",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: Text("Bạn có chắc chắn muốn xoá $title không?"),
+            actions: [
+              TextButton(
+                child: const Text(
+                  "Hủy",
+                  style: TextStyle(color: Colors.black54),
+                ),
+                onPressed: () => Navigator.pop(context, false),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Xoá"),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ❗ FIX LỖI: luôn reset context hợp lệ
     fToast.init(context);
 
     return Scaffold(
@@ -92,6 +122,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         children: [
+          // ================= TÙY CHỌN HỆ THỐNG =================
           const Text(
             "Tùy chọn ứng dụng",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -126,8 +157,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: 25),
 
+          // ================= TÀI KHOẢN =================
           const Text(
-            "Tài khoản & Bảo mật",
+            "Tài khoản",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 10),
@@ -135,7 +167,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildNavTile(
             icon: Icons.lock_reset,
             title: "Đổi mật khẩu",
-            subtitle: "Cập nhật mật khẩu đăng nhập",
+            color: const Color(0xFF6DBE45),
             onTap: () {
               Navigator.push(
                 context,
@@ -146,91 +178,142 @@ class _SettingsPageState extends State<SettingsPage> {
 
           _buildNavTile(
             icon: Icons.security,
-            title: "Bảo mật",
-            subtitle: "Xác thực & quyền truy cập",
+            title: "Cài đặt bảo mật",
+            color: const Color(0xFF6DBE45),
             onTap: () => showToast("Tính năng đang phát triển", success: false),
           ),
+
+          const SizedBox(height: 25),
+
+          // ================= QUẢN LÝ DỮ LIỆU =================
+          const Text(
+            "Quản lý dữ liệu",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 10),
 
           _buildNavTile(
             icon: Icons.delete,
             title: "Xóa lịch sử chat",
-            subtitle: "Xóa toàn bộ hội thoại với AI",
+            color: Colors.red,
             onTap: () async {
-              final user = Supabase.instance.client.auth.currentUser;
-              if (user == null) return;
+              if (await confirmDialog("lịch sử chat")) {
+                final user = Supabase.instance.client.auth.currentUser;
+                if (user == null) return;
 
-              await ChatStorage.clearMessages(user.id);
+                await ChatStorage.clearMessages(user.id);
+                showToast("Đã xoá lịch sử chat");
+              }
+            },
+          ),
 
-              showToast("Đã xoá lịch sử chat");
+          _buildNavTile(
+            icon: Icons.delete_forever,
+            title: "Xóa dữ liệu phân tích hình ảnh",
+            color: Colors.red,
+            onTap: () async {
+              if (await confirmDialog("dữ liệu phân tích hình ảnh")) {
+                final supabase = Supabase.instance.client;
+                final user = supabase.auth.currentUser;
+
+                if (user == null) {
+                  showToast("Bạn chưa đăng nhập!", success: false);
+                  return;
+                }
+
+                try {
+                  await supabase
+                      .from("jackfruit_history")
+                      .delete()
+                      .eq("user_id", user.id);
+
+                  showToast("Đã xoá toàn bộ dữ liệu phân tích hình ảnh");
+                } catch (e) {
+                  showToast("Lỗi khi xóa dữ liệu!", success: false);
+                }
+              }
             },
           ),
 
           _buildNavTile(
             icon: Icons.delete_sweep,
-            title: "Xóa lịch sử so sánh mô hình",
-            subtitle: "Xóa toàn bộ lịch sử so sánh",
+            title: "Xóa lịch sử so sánh",
+            color: Colors.red,
             onTap: () async {
-              final supabase = Supabase.instance.client;
-              final user = supabase.auth.currentUser;
+              if (await confirmDialog("lịch sử so sánh mô hình")) {
+                final supabase = Supabase.instance.client;
+                final user = supabase.auth.currentUser;
 
-              if (user == null) {
-                showToast("Bạn chưa đăng nhập!", success: false);
-                return;
-              }
+                if (user == null) {
+                  showToast("Bạn chưa đăng nhập!", success: false);
+                  return;
+                }
 
-              try {
-                await supabase
-                    .from("compare_history")
-                    .delete()
-                    .eq("user_id", user.id);
+                try {
+                  await supabase
+                      .from("compare_history")
+                      .delete()
+                      .eq("user_id", user.id);
 
-                showToast("Đã xoá toàn bộ lịch sử so sánh");
-              } catch (e) {
-                showToast("Lỗi khi xóa!", success: false);
+                  showToast("Đã xoá toàn bộ lịch sử so sánh");
+                } catch (e) {
+                  showToast("Lỗi khi xóa!", success: false);
+                }
               }
             },
           ),
 
           const SizedBox(height: 25),
 
+          // ================= THÔNG TIN ỨNG DỤNG =================
           const Text(
-            "Thông tin",
+            "Thông tin ứng dụng",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
           const SizedBox(height: 10),
 
           _buildNavTile(
             icon: Icons.info,
-            title: "Giới thiệu",
-            subtitle: "Thông tin về AgriVision",
+            title: "Giới thiệu AgriVision",
+            color: const Color(0xFF6DBE45),
             onTap: () => Navigator.pushNamed(context, "/about"),
           ),
 
           _buildNavTile(
             icon: Icons.contact_support,
-            title: "Hỗ trợ",
-            subtitle: "Liên hệ đội ngũ phát triển",
+            title: "Hỗ trợ & Liên hệ",
+            color: const Color(0xFF6DBE45),
             onTap: () =>
-                showToast("Liên hệ: agrivision.duy@gmail.com", success: true),
+                showToast("Email: agrivision.duy@gmail.com", success: true),
           ),
 
           _buildNavTile(
             icon: Icons.article,
-            title: "Điều khoản & riêng tư",
-            subtitle: "Chính sách sử dụng",
+            title: "Điều khoản & Quyền riêng tư",
+            color: const Color(0xFF6DBE45),
             onTap: () => showToast("Tính năng đang phát triển", success: false),
           ),
 
-          _buildNavTile(
-            icon: Icons.info_outline,
-            title: "Phiên bản ứng dụng",
-            subtitle: "AgriVision v1.0.0",
-            onTap: () => showToast("Phiên bản: 1.0.0", success: true),
+          // Phiên bản
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.info_outline, color: Color(0xFF6DBE45)),
+              title: const Text("Phiên bản ứng dụng"),
+              trailing: const Text(
+                "v1.0.0",
+                style: TextStyle(color: Colors.black54),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+
+  // ================== UI TILES ==================
 
   Widget _buildSwitchTile({
     required IconData icon,
@@ -253,15 +336,14 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildNavTile({
     required IconData icon,
     required String title,
-    required String subtitle,
+    required Color color,
     required VoidCallback onTap,
   }) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF6DBE45)),
+        leading: Icon(icon, color: color),
         title: Text(title),
-        subtitle: Text(subtitle),
         trailing: const Icon(Icons.arrow_forward_ios, size: 18),
         onTap: onTap,
       ),

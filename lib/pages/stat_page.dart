@@ -11,6 +11,7 @@ class StatPage extends StatefulWidget {
 
 class _StatPageState extends State<StatPage> {
   List<dynamic> history = [];
+  List<dynamic> imageHistory = [];
   bool loadingHistory = true;
 
   @override
@@ -30,19 +31,42 @@ class _StatPageState extends State<StatPage> {
         return;
       }
 
-      final res = await supabase
+      // Lịch sử so sánh model
+      final compareRes = await supabase
           .from("compare_history")
           .select()
           .eq("user_id", user.id)
           .order("created_at", ascending: false);
 
+      // Lịch sử phân tích ảnh
+      final imageRes = await supabase
+          .from("jackfruit_history")
+          .select()
+          .eq("user_id", user.id)
+          .order("created_at", ascending: false);
+
       setState(() {
-        history = res;
+        history = compareRes;
+        imageHistory = imageRes;
         loadingHistory = false;
       });
     } catch (e) {
       debugPrint("LOAD ERROR: $e");
       setState(() => loadingHistory = false);
+    }
+  }
+
+  // ========================== LABEL MAP ==========================
+  String mapLabel(String raw) {
+    switch (raw) {
+      case "mit_chin":
+        return "Mít chín";
+      case "mit_non":
+        return "Mít non";
+      case "mit_saubenh":
+        return "Mít sâu bệnh";
+      default:
+        return raw;
     }
   }
 
@@ -61,82 +85,7 @@ class _StatPageState extends State<StatPage> {
     );
   }
 
-  // ========================== 1) ẢNH ==========================
-  Widget buildImageStats() {
-    // Fake data
-    final totalImages = 134;
-    final diseased = 48;
-    final healthy = totalImages - diseased;
-
-    final percentDisease = (diseased / totalImages * 100).toStringAsFixed(1);
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: const [
-                Icon(Icons.image, color: Color(0xFF6DBE45)),
-                SizedBox(width: 10),
-                Text(
-                  "Thống kê phân tích ảnh",
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            statRow("Tổng ảnh đã phân tích", "$totalImages ảnh"),
-            statRow("Ảnh phát hiện bệnh", "$diseased ảnh"),
-            statRow("Ảnh bình thường", "$healthy ảnh"),
-            statRow("Tỷ lệ bệnh", "$percentDisease%"),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ========================== 2) VIDEO / WEBCAM ==========================
-  Widget buildVideoStats() {
-    // Fake data
-    final videoCount = 21;
-    final avgDuration = "14.2 giây";
-    final detections = 63;
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: const [
-                Icon(Icons.videocam, color: Color(0xFF6DBE45)),
-                SizedBox(width: 10),
-                Text(
-                  "Thống kê video / webcam",
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            statRow("Số video đã phân tích", "$videoCount lần"),
-            statRow("Thời gian phân tích TB", avgDuration),
-            statRow("Tổng số đối tượng phát hiện", "$detections lần"),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ========================== 3) LỊCH SỬ COMPARE MODEL ==========================
+  // ========================== COMPARE MODEL CARD ==========================
   Widget buildCompareCard(Map record) {
     final modelA = record["model_a"];
     final modelB = record["model_b"];
@@ -169,9 +118,7 @@ class _StatPageState extends State<StatPage> {
             ),
             const SizedBox(height: 6),
             Text(time, style: const TextStyle(color: Colors.black54)),
-
             const SizedBox(height: 14),
-
             Table(
               border: TableBorder.all(color: Colors.grey.shade300),
               children: [
@@ -231,26 +178,7 @@ class _StatPageState extends State<StatPage> {
     );
   }
 
-  Widget statRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF6DBE45),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ========================== PAGE BUILD ==========================
+  // ========================== PAGE UI ==========================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -267,15 +195,88 @@ class _StatPageState extends State<StatPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // === 1) ẢNH ===
-          sectionTitle("Ảnh đã phân tích"),
-          buildImageStats(),
+          // === LỊCH SỬ PHÂN TÍCH ẢNH ===
+          sectionTitle("Lịch sử phân tích hình ảnh"),
+          loadingHistory
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF6DBE45)),
+                )
+              : imageHistory.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(
+                    child: Text(
+                      "Chưa có dữ liệu phân tích.\nVui lòng tải ảnh để phân tích!",
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : Column(
+                  children: imageHistory.map((item) {
+                    final imageUrl = item["image_url"];
+                    final label = mapLabel(
+                      item["label"],
+                    ); // ✨ đổi sang tiếng Việt
+                    final conf = ((item["confidence"] ?? 0.0) * 100)
+                        .toStringAsFixed(1);
 
-          // === 2) VIDEO ===
-          sectionTitle("Video / Webcam"),
-          buildVideoStats(),
+                    final rawTime = item["created_at"];
+                    final time = rawTime == null
+                        ? "Không rõ thời gian"
+                        : DateFormat(
+                            "dd/MM/yyyy - HH:mm",
+                          ).format(DateTime.parse(rawTime).toLocal());
 
-          // === 3) LỊCH SỬ SO SÁNH MODEL ===
+                    return Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      margin: const EdgeInsets.only(bottom: 15),
+                      elevation: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network(
+                                imageUrl,
+                                width: 70,
+                                height: 70,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    label,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text("Độ tin cậy: $conf%"),
+                                  Text(
+                                    time,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+          // === LỊCH SỬ SO SÁNH MODEL ===
           sectionTitle("Lịch sử so sánh mô hình YOLO"),
           loadingHistory
               ? const Center(
@@ -284,7 +285,12 @@ class _StatPageState extends State<StatPage> {
               : history.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(20),
-                  child: Center(child: Text("Chưa có lịch sử")),
+                  child: Center(
+                    child: Text(
+                      "Chưa có dữ liệu so sánh.\nVui lòng so sánh để hiển thị!",
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 )
               : Column(children: [...history.map((e) => buildCompareCard(e))]),
         ],

@@ -1,6 +1,12 @@
-import 'dart:async';
+import 'dart:io';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+
+import '../services/jackfruit_classifier.dart';
 
 class ImagePage extends StatefulWidget {
   const ImagePage({super.key});
@@ -11,46 +17,97 @@ class ImagePage extends StatefulWidget {
 
 class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
   final Color primaryColor = const Color(0xFF6DBE45);
+  final supabase = Supabase.instance.client;
 
-  String? previewImg;
+  File? _imageFile;
 
   String detected = "—";
   String status = "—";
   String confidence = "—";
+  String rawLabel = "";
 
   bool analyzing = false;
   Rect? boxRect;
 
-  Timer? analyzeTimer;
+  final ImagePicker _picker = ImagePicker();
+  final JackfruitClassifier _classifier = JackfruitClassifier();
+  bool _modelLoaded = false;
 
-  // fade animation
-  late AnimationController fadeCtrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 350),
-  );
+  late AnimationController fadeCtrl;
+  late FToast fToast;
 
-  // ===== DỮ LIỆU GIẢ =====
-  final fakeObjects = ["Mít chín", "Mít non", "Mít sâu bệnh"];
+  // ================= INIT =================
+  @override
+  void initState() {
+    super.initState();
+    fadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
 
-  final fakeStatus = [
-    "Tốt – thu hoạch được",
-    "Cần chăm thêm",
-    "Dấu hiệu sâu bệnh",
-  ];
+    fToast = FToast();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      fToast.init(context);
+    });
 
-  final fakeImages = [
-    "assets/images/sample_ripen.png",
-    "assets/images/sample_unripe.png",
-    "assets/images/sample_disease.png",
-  ];
+    _initModel();
+  }
+
+  Future<void> _initModel() async {
+    await _classifier.loadModel();
+    setState(() => _modelLoaded = _classifier.isLoaded);
+  }
 
   @override
   void dispose() {
-    analyzeTimer?.cancel();
     fadeCtrl.dispose();
     super.dispose();
   }
 
+  // ================= TOAST =================
+  void showToast(String message, {bool success = true}) {
+    fToast.removeQueuedCustomToasts();
+
+    final toast = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            success ? Icons.check_circle : Icons.error,
+            color: success ? Colors.green : Colors.red,
+            size: 26,
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.black87, fontSize: 15),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    fToast.showToast(
+      child: toast,
+      gravity: ToastGravity.BOTTOM,
+      toastDuration: const Duration(seconds: 2),
+    );
+  }
+
+  // ================ RANDOM BOX ================
   Rect randomBox() {
     final r = Random();
     return Rect.fromLTWH(
@@ -61,66 +118,152 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
     );
   }
 
-  void startAnalyze() {
+  // ================= PICK IMAGE =================
+  Future<void> _pickImage(ImageSource source) async {
+    if (!_modelLoaded) {
+      showToast("Model đang tải, vui lòng đợi...", success: false);
+      return;
+    }
+
+    final picked = await _picker.pickImage(source: source);
+    if (picked == null) return;
+
+    final file = File(picked.path);
+
     setState(() {
       analyzing = true;
-      previewImg = null;
+      _imageFile = file;
+      detected = "—";
+      status = "—";
+      confidence = "—";
+      rawLabel = "";
       boxRect = null;
     });
 
-    analyzeTimer?.cancel();
-    analyzeTimer = Timer(const Duration(seconds: 2), () {
-      generateFakeResult();
-    });
+    await _analyzeImage(file);
   }
 
-  void generateFakeResult() {
-    final r = Random();
-    final idx = r.nextInt(3);
+  // ================= ANALYZE =================
+  Future<void> _analyzeImage(File file) async {
+    try {
+      final result = await _classifier.classify(file);
 
-    setState(() {
-      previewImg = fakeImages[idx];
-      detected = fakeObjects[idx];
-      status = fakeStatus[idx];
-      confidence = "${70 + r.nextInt(30)}%";
-      boxRect = randomBox();
+      final rLabel = (result['label'] ?? '').toString();
+      final conf = (result['confidence'] ?? 0.0) as double;
+
+      setState(() {
+        rawLabel = rLabel;
+        analyzing = false;
+        detected = _mapLabelToText(rLabel);
+        status = _mapLabelToStatus(rLabel);
+        confidence = "${(conf * 100).toStringAsFixed(1)}%";
+        boxRect = randomBox();
+      });
+
+      fadeCtrl.forward(from: 0);
+
+      await _saveHistory(file, rLabel, conf);
+    } catch (e) {
       analyzing = false;
-    });
-
-    fadeCtrl.forward(from: 0);
+      showToast("Lỗi phân tích ảnh!", success: false);
+    }
   }
 
+  // ================= SAVE HISTORY =================
+  Future<void> _saveHistory(File file, String label, double conf) async {
+    try {
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        showToast("Bạn chưa đăng nhập!", success: false);
+        return;
+      }
+
+      final bytes = await file.readAsBytes();
+      final fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+      // Upload file
+      await supabase.storage.from("history").uploadBinary(fileName, bytes);
+
+      final imageUrl = supabase.storage.from("history").getPublicUrl(fileName);
+
+      // Insert record
+      await supabase.from("jackfruit_history").insert({
+        "user_id": user.id,
+        "image_url": imageUrl,
+        "label": label,
+        "confidence": conf,
+      });
+
+      showToast("Đã lưu lịch sử phân tích!");
+    } catch (e) {
+      print("🔥 Lỗi lưu lịch sử: $e");
+      showToast("Không thể lưu lịch sử!", success: false);
+    }
+  }
+
+  // ================ LABEL MAP =================
+  String _mapLabelToText(String label) {
+    switch (label) {
+      case 'mit_chin':
+        return 'Mít chín';
+      case 'mit_non':
+        return 'Mít non';
+      case 'mit_saubenh':
+        return 'Mít sâu bệnh';
+      default:
+        return 'Không xác định';
+    }
+  }
+
+  String _mapLabelToStatus(String label) {
+    switch (label) {
+      case 'mit_chin':
+        return 'Tốt – có thể thu hoạch';
+      case 'mit_non':
+        return 'Cần thời gian chín thêm';
+      case 'mit_saubenh':
+        return 'Có dấu hiệu sâu bệnh – cần xử lý';
+      default:
+        return 'Không rõ tình trạng';
+    }
+  }
+
+  Color _getColor(String label) {
+    switch (label) {
+      case "mit_chin":
+        return Colors.amber;
+      case "mit_non":
+        return Colors.green;
+      case "mit_saubenh":
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF3FFEA),
-
       appBar: AppBar(
-        backgroundColor: primaryColor,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
         title: const Text(
           "Phân tích hình ảnh",
           style: TextStyle(color: Colors.white, fontSize: 18),
         ),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF6DBE45),
+        foregroundColor: Colors.white,
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             _previewBox(),
-
             const SizedBox(height: 20),
-
             _buttons(),
-
             const SizedBox(height: 30),
-
             _resultBox(),
           ],
         ),
@@ -128,43 +271,34 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
     );
   }
 
-  // ================= PREVIEW =================
+  // ================= PREVIEW IMAGE =================
   Widget _previewBox() {
     return Container(
       height: 260,
-      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: primaryColor, width: 3),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.10),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
-          ),
-        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          // Fade-in image
-          previewImg != null
+          _imageFile != null
               ? FadeTransition(
                   opacity: fadeCtrl,
-                  child: Image.asset(
-                    previewImg!,
+                  child: Image.file(
+                    _imageFile!,
                     width: double.infinity,
                     height: double.infinity,
                     fit: BoxFit.cover,
                   ),
                 )
-              : Center(
-                  child: Icon(Icons.image, size: 80, color: Colors.grey[400]),
+              : const Center(
+                  child: Icon(Icons.image, size: 80, color: Colors.grey),
                 ),
 
-          // bounding box + label
-          if (boxRect != null)
+          // ================= BOUNDING BOX =================
+          if (boxRect != null && rawLabel.isNotEmpty)
             Positioned(
               left: boxRect!.left,
               top: boxRect!.top,
@@ -174,26 +308,25 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
                     width: boxRect!.width,
                     height: boxRect!.height,
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.greenAccent, width: 3),
+                      border: Border.all(color: _getColor(rawLabel), width: 3),
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
                   Positioned(
                     top: -28,
-                    left: 0,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.greenAccent,
+                        color: _getColor(rawLabel),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
                         detected,
                         style: const TextStyle(
-                          color: Colors.black,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -203,7 +336,6 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
               ),
             ),
 
-          // overlay đang phân tích
           if (analyzing)
             Container(
               width: double.infinity,
@@ -241,27 +373,29 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         ElevatedButton.icon(
-          onPressed: startAnalyze,
+          onPressed: () => _pickImage(ImageSource.gallery),
           icon: const Icon(Icons.upload, color: Colors.white),
-          label: const Text("Tải ảnh lên"),
+          label: const Text(
+            "Tải ảnh lên",
+            style: TextStyle(color: Colors.white),
+          ),
           style: ElevatedButton.styleFrom(
             backgroundColor: primaryColor,
-            padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(30),
             ),
           ),
         ),
-
         ElevatedButton.icon(
-          onPressed: startAnalyze,
+          onPressed: () => _pickImage(ImageSource.camera),
           icon: const Icon(Icons.camera_alt, color: Colors.white),
-          label: const Text("Chụp ảnh"),
+          label: const Text("Chụp ảnh", style: TextStyle(color: Colors.white)),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.blue,
-            padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(30),
             ),
           ),
         ),
@@ -271,23 +405,14 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
 
   // ================= RESULT =================
   Widget _resultBox() {
-    final hasData = previewImg != null;
+    final hasData = detected != "—";
 
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
-
       child: hasData
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,7 +422,6 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
-
                 _item("Nhận dạng:", detected),
                 _item("Tình trạng:", status),
                 _item("Độ tin cậy:", confidence),
@@ -318,16 +442,10 @@ class _ImagePageState extends State<ImagePage> with TickerProviderStateMixin {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 15),
-            ),
-          ),
+          Expanded(child: Text(value, textAlign: TextAlign.right)),
         ],
       ),
     );
