@@ -326,7 +326,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildNavTile(
             icon: Icons.qr_code_2,
             title: "Tải ứng dụng bằng QR",
-            color: Colors.blue,
+            color: Color(0xFF6DBE45),
             onTap: () =>
                 showQRDialog("Tải xuống ứng dụng", "assets/images/qr_app.png"),
           ),
@@ -335,7 +335,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildNavTile(
             icon: Icons.qr_code_scanner,
             title: "Tải bộ dữ liệu mẫu",
-            color: Colors.deepPurple,
+            color: Color(0xFF651FFF),
             onTap: () => showQRDialog(
               "Tải bộ dữ liệu test",
               "assets/images/qr_dataset.png",
