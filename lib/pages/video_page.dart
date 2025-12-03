@@ -1,7 +1,19 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:camera/camera.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:image/image.dart' as img;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart' as VT;
+
+import '../services/video_classifier.dart';
 
 class VideoPage extends StatefulWidget {
   const VideoPage({super.key});
@@ -10,129 +22,147 @@ class VideoPage extends StatefulWidget {
   State<VideoPage> createState() => _VideoPageState();
 }
 
-class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
+class _VideoPageState extends State<VideoPage> {
   String mode = "video";
-  String? selectedFile;
+  String? videoPath;
   bool webcamActive = false;
 
-  double confidence = 0.8;
+  CameraController? _cameraCtrl;
+  VideoPlayerController? _videoCtrl;
+  Timer? _camTimer;
 
-  Timer? webcamTimer;
-  Timer? videoTimer;
+  final classifier = VideoJackfruitClassifier();
+  Map<String, double> resultMap = {};
 
-  // Fake preview image
-  String? previewImg;
+  bool modelLoaded = false;
+  bool analyzingVideo = false;
 
-  // Animation for fade-in
-  late AnimationController fadeCtrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 350),
-  );
+  @override
+  void initState() {
+    super.initState();
+    _loadModel();
+  }
 
-  // Animation for mode switch
-  late AnimationController switchCtrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 250),
-  );
-
-  // Fake bounding box
-  Rect? fakeBox;
-
-  // =============================
-  //   DATA
-  // =============================
-  final fakeObjects = ["Mít chín", "Mít non", "Mít sâu bệnh"];
-  final fakeStatus = ["Tốt", "Cần theo dõi", "Cần xử lý"];
-  final fakeImages = [
-    "assets/images/sample_ripen.png",
-    "assets/images/sample_unripe.png",
-    "assets/images/sample_disease.png",
-  ];
-
-  String detected = "—";
-  String status = "—";
-  String count = "—";
+  Future<void> _loadModel() async {
+    await classifier.loadModel();
+    setState(() => modelLoaded = classifier.isLoaded);
+  }
 
   @override
   void dispose() {
-    webcamTimer?.cancel();
-    videoTimer?.cancel();
-    fadeCtrl.dispose();
-    switchCtrl.dispose();
+    _camTimer?.cancel();
+    _cameraCtrl?.dispose();
+    _videoCtrl?.dispose();
     super.dispose();
   }
 
-  Rect _randomBox() {
-    final r = Random();
-    return Rect.fromLTWH(
-      40 + r.nextInt(80).toDouble(),
-      40 + r.nextInt(80).toDouble(),
-      120 + r.nextInt(60).toDouble(),
-      120 + r.nextInt(50).toDouble(),
+  // -------------------------
+  // TOAST
+  // -------------------------
+  void showToast(String msg, {bool success = true}) {
+    Fluttertoast.showToast(
+      msg: msg,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: success ? Colors.white : Colors.red.shade300,
+      textColor: Colors.black87,
     );
   }
 
-  void generateResult() {
-    final r = Random();
-    final idx = r.nextInt(3);
+  // -------------------------
+  // PERMISSION FOR ANDROID
+  // -------------------------
+  Future<bool> _requestVideoPermission() async {
+    if (!Platform.isAndroid) return true;
 
-    setState(() {
-      previewImg = fakeImages[idx];
-      detected = fakeObjects[idx];
-      status = fakeStatus[idx];
-      confidence = 0.6 + r.nextDouble() * 0.4;
+    final info = await DeviceInfoPlugin().androidInfo;
 
-      count = idx == 0
-          ? "1 trái (mít chín)"
-          : idx == 1
-          ? "3 trái (mít non)"
-          : "1 trái (mít sâu bệnh)";
-
-      fakeBox = _randomBox();
-    });
-
-    fadeCtrl.forward(from: 0);
+    if (info.version.sdkInt >= 33) {
+      final videos = await Permission.videos.request();
+      return videos.isGranted;
+    } else {
+      final storage = await Permission.storage.request();
+      return storage.isGranted;
+    }
   }
 
+  // -------------------------
+  // UPLOAD HISTORY TO SUPABASE
+  // -------------------------
+  Future<void> _saveVideoHistory({
+    required File videoFile,
+    required Uint8List thumbnailBytes,
+    required String label,
+    required double conf,
+  }) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        showToast("Bạn chưa đăng nhập!", success: false);
+        return;
+      }
+
+      final fileId = DateTime.now().millisecondsSinceEpoch;
+      final videoName = "$fileId.mp4";
+      final thumbName = "$fileId.jpg";
+
+      // UPLOAD VIDEO
+      await supabase.storage
+          .from("history")
+          .uploadBinary(videoName, await videoFile.readAsBytes());
+      final videoUrl = supabase.storage.from("history").getPublicUrl(videoName);
+
+      // UPLOAD THUMBNAIL
+      await supabase.storage
+          .from("history")
+          .uploadBinary(thumbName, thumbnailBytes);
+      final thumbUrl = supabase.storage.from("history").getPublicUrl(thumbName);
+
+      // INSERT DATABASE
+      await supabase.from("jackfruit_video_history").insert({
+        "user_id": user.id,
+        "video_url": videoUrl,
+        "thumbnail_url": thumbUrl,
+        "label": label,
+        "confidence": conf,
+      });
+
+      showToast("Đã lưu lịch sử phân tích video!");
+    } catch (e) {
+      print("SAVE HISTORY ERROR: $e");
+      showToast("Lỗi lưu lịch sử!", success: false);
+    }
+  }
+
+  // -------------------------
+  // UI
+  // -------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF9FFE8),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF6DBE45),
-        elevation: 0,
-        centerTitle: true,
         title: const Text(
           "Phân tích Video / Webcam",
           style: TextStyle(color: Colors.white, fontSize: 18),
         ),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF6DBE45),
         foregroundColor: Colors.white,
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            ScaleTransition(
-              scale: Tween(begin: 0.9, end: 1.0).animate(
-                CurvedAnimation(parent: switchCtrl, curve: Curves.easeOut),
-              ),
-              child: _modeSelector(),
-            ),
-
+            _modeSelector(),
             const SizedBox(height: 20),
             _preview(),
+            const SizedBox(height: 8),
+            _hintBanner(),
             const SizedBox(height: 20),
-
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: mode == "video" ? _uploadBtn() : _webcamBtn(),
-            ),
-
+            mode == "video" ? _uploadButton() : _webcamButton(),
             const SizedBox(height: 25),
-            _confidenceSlider(),
-            const SizedBox(height: 20),
-
             _resultBox(),
           ],
         ),
@@ -140,16 +170,15 @@ class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
     );
   }
 
-  // ================= MODE PICKER =================
+  // -------------------------
+  // MODE SELECTOR
+  // -------------------------
   Widget _modeSelector() {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(50),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12),
-        ],
       ),
       child: Row(
         children: [
@@ -165,21 +194,15 @@ class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
 
     return Expanded(
       child: GestureDetector(
-        onTap: () {
-          switchCtrl.forward(from: 0);
-
-          webcamTimer?.cancel();
-          videoTimer?.cancel();
+        onTap: () async {
+          await _stopWebcam();
+          await _stopVideo();
 
           setState(() {
             mode = id;
-            previewImg = null;
-            fakeBox = null;
-            selectedFile = null;
-            webcamActive = false;
-            detected = "—";
-            status = "—";
-            count = "—";
+            videoPath = null;
+            _videoCtrl = null;
+            resultMap = {};
           });
         },
         child: AnimatedContainer(
@@ -205,79 +228,48 @@ class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
     );
   }
 
-  // ================= PREVIEW + OVERLAY =================
+  // -------------------------
+  // PREVIEW
+  // -------------------------
   Widget _preview() {
-    final analyzing =
-        (selectedFile != null && previewImg == null) ||
-        (webcamActive && previewImg == null);
-
     return Container(
       height: 260,
-      width: double.infinity,
       decoration: BoxDecoration(
+        color: Colors.black12,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFF6DBE45), width: 3),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10),
-        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          previewImg != null
-              ? FadeTransition(
-                  opacity: fadeCtrl,
-                  child: Image.asset(
-                    previewImg!,
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                )
-              : Center(
-                  child: Icon(
-                    mode == "video" ? Icons.video_file : Icons.videocam,
-                    size: 90,
-                    color: Colors.white70,
-                  ),
-                ),
-
-          if (fakeBox != null)
-            Positioned(
-              left: fakeBox!.left,
-              top: fakeBox!.top,
-              child: Container(
-                width: fakeBox!.width,
-                height: fakeBox!.height,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.greenAccent, width: 3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+          if (_cameraCtrl != null &&
+              webcamActive &&
+              _cameraCtrl!.value.isInitialized)
+            Center(
+              child: AspectRatio(
+                aspectRatio: _cameraCtrl!.value.aspectRatio,
+                child: CameraPreview(_cameraCtrl!),
               ),
+            )
+          else if (_videoCtrl != null &&
+              mode == "video" &&
+              _videoCtrl!.value.isInitialized)
+            Center(
+              child: AspectRatio(
+                aspectRatio: _videoCtrl!.value.aspectRatio,
+                child: VideoPlayer(_videoCtrl!),
+              ),
+            )
+          else
+            const Center(
+              child: Icon(Icons.videocam, size: 80, color: Colors.white70),
             ),
 
-          if (analyzing)
+          if (analyzingVideo)
             Container(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black38,
               child: const Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    ),
-                    SizedBox(width: 10),
-                    Text(
-                      "Đang phân tích…",
-                      style: TextStyle(color: Colors.white, fontSize: 17),
-                    ),
-                  ],
-                ),
+                child: CircularProgressIndicator(color: Colors.white),
               ),
             ),
         ],
@@ -285,52 +277,138 @@ class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
     );
   }
 
-  // ================= BUTTONS =================
-  Widget _uploadBtn() {
-    return ElevatedButton.icon(
-      onPressed: () async {
-        final picked = await FilePicker.platform.pickFiles(
-          type: FileType.video,
-        );
+  // -------------------------
+  // HINT BANNER
+  // -------------------------
+  Widget _hintBanner() {
+    final String text = mode == "video"
+        ? "Khi tải video, ứng dụng sẽ phân tích một vài giây.\nVui lòng đợi kết quả."
+        : "Webcam liên tục phân tích.\nGiữ máy ổn định để có kết quả tốt.";
 
-        if (picked != null) {
-          setState(() {
-            previewImg = null;
-            fakeBox = null;
-            selectedFile = picked.files.first.name;
-          });
-
-          // Simulate 10-second analysis
-          videoTimer?.cancel();
-          videoTimer = Timer(const Duration(seconds: 10), () {
-            generateResult();
-          });
-        }
-      },
-      icon: const Icon(Icons.upload, color: Colors.white),
-      label: const Text("Tải video lên", style: TextStyle(color: Colors.white)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF6DBE45),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFF6DBE45), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 13, color: Colors.black87),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _webcamBtn() {
+  // -------------------------
+  // UPLOAD VIDEO
+  // -------------------------
+  Widget _uploadButton() {
     return ElevatedButton.icon(
-      onPressed: () {
-        setState(() => webcamActive = !webcamActive);
+      onPressed: () async {
+        if (!modelLoaded) {
+          showToast("Model đang tải...");
+          return;
+        }
 
-        if (webcamActive) {
-          previewImg = null;
-          fakeBox = null;
+        if (!await _requestVideoPermission()) {
+          showToast("Ứng dụng cần quyền đọc video!");
+          return;
+        }
 
-          generateResult();
-          webcamTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-            generateResult();
-          });
+        final picked = await FilePicker.platform.pickFiles(
+          type: FileType.video,
+        );
+        if (picked == null) return;
+
+        videoPath = picked.files.first.path!;
+        await _stopWebcam();
+        await _stopVideo();
+
+        _videoCtrl = VideoPlayerController.file(File(videoPath!));
+        await _videoCtrl!.initialize();
+
+        setState(() {});
+        _videoCtrl!.play();
+
+        setState(() => analyzingVideo = true);
+        showToast("Đang phân tích...");
+
+        await _analyzeVideo();
+
+        showToast("Đã phân tích xong!");
+        setState(() => analyzingVideo = false);
+      },
+      icon: const Icon(Icons.upload, color: Colors.white),
+      label: const Text("Tải video lên", style: TextStyle(color: Colors.white)),
+      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6DBE45)),
+    );
+  }
+
+  // -------------------------
+  // ANALYZE VIDEO
+  // -------------------------
+  Future<void> _analyzeVideo() async {
+    if (videoPath == null) return;
+
+    final mid = _videoCtrl!.value.duration.inMilliseconds ~/ 2;
+
+    final bytes = await VT.VideoThumbnail.thumbnailData(
+      video: videoPath!,
+      imageFormat: VT.ImageFormat.JPEG,
+      timeMs: mid,
+      quality: 85,
+    );
+
+    if (bytes == null) return;
+
+    final frame = img.decodeImage(bytes);
+    if (frame == null) return;
+
+    resultMap = await classifier.predictFrame(frame);
+    setState(() {});
+
+    // GET BEST RESULT
+    final best = resultMap.entries.reduce((a, b) => a.value > b.value ? a : b);
+
+    // SAVE HISTORY INTO DATABASE
+    await _saveVideoHistory(
+      videoFile: File(videoPath!),
+      thumbnailBytes: bytes,
+      label: best.key,
+      conf: best.value,
+    );
+  }
+
+  // -------------------------
+  // STOP VIDEO
+  // -------------------------
+  Future<void> _stopVideo() async {
+    try {
+      await _videoCtrl?.pause();
+      await _videoCtrl?.dispose();
+    } catch (_) {}
+
+    _videoCtrl = null;
+    setState(() {});
+  }
+
+  // -------------------------
+  // WEBCAM
+  // -------------------------
+  Widget _webcamButton() {
+    return ElevatedButton.icon(
+      onPressed: () async {
+        if (!webcamActive) {
+          _startWebcam();
         } else {
-          webcamTimer?.cancel();
+          _stopWebcam();
         }
       },
       icon: Icon(
@@ -343,87 +421,132 @@ class _VideoPageState extends State<VideoPage> with TickerProviderStateMixin {
       ),
       style: ElevatedButton.styleFrom(
         backgroundColor: webcamActive ? Colors.red : const Color(0xFF6DBE45),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
 
-  // ================= SLIDER =================
-  Widget _confidenceSlider() {
+  Future<void> _startWebcam() async {
+    if (await Permission.camera.request().isDenied) {
+      showToast("Cần quyền camera!");
+      return;
+    }
+
+    final cams = await availableCameras();
+    if (cams.isEmpty) {
+      showToast("Không tìm thấy camera!");
+      return;
+    }
+
+    _cameraCtrl = CameraController(
+      cams.first,
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
+
+    await _cameraCtrl!.initialize();
+    setState(() => webcamActive = true);
+
+    _camTimer = Timer.periodic(const Duration(milliseconds: 900), (_) async {
+      if (!webcamActive) return;
+
+      try {
+        final pic = await _cameraCtrl!.takePicture();
+        final bytes = await pic.readAsBytes();
+        final frame = img.decodeImage(bytes);
+        if (frame == null) return;
+
+        resultMap = await classifier.predictFrame(frame);
+        setState(() {});
+      } catch (_) {}
+    });
+
+    showToast("Webcam đã bật!");
+  }
+
+  Future<void> _stopWebcam() async {
+    webcamActive = false;
+    _camTimer?.cancel();
+
+    try {
+      await _cameraCtrl?.dispose();
+    } catch (_) {}
+
+    _cameraCtrl = null;
+    setState(() {});
+  }
+
+  // -------------------------
+  // RESULT BOX
+  // -------------------------
+  Widget _resultBox() {
+    if (resultMap.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Text(
+          "Chưa có dữ liệu.\nNhấn tải video lên hoặc bật webcam để phân tích.",
+          style: TextStyle(fontSize: 15),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Kết quả phân tích",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          _barItem("mit_chin", Colors.amber),
+          _barItem("mit_non", Colors.green),
+          _barItem("mit_saubenh", Colors.purple),
+        ],
+      ),
+    );
+  }
+
+  Widget _barItem(String key, Color color) {
+    final v = resultMap[key] ?? 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          "Độ tin cậy",
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        Text(
+          "${_labelVN(key)}   ${(v * 100).toStringAsFixed(1)}%",
+          style: const TextStyle(fontSize: 16),
         ),
-        Slider(
-          value: confidence,
-          min: 0.2,
-          max: 1.0,
-          divisions: 8,
-          activeColor: const Color(0xFF6DBE45),
-          onChanged: (v) => setState(() => confidence = v),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: v,
+          color: color,
+          minHeight: 8,
+          backgroundColor: Colors.grey[300],
         ),
+        const SizedBox(height: 14),
       ],
     );
   }
 
-  // ================= RESULT =================
-  Widget _resultBox() {
-    final hasData = previewImg != null;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8),
-        ],
-      ),
-      child: hasData
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Kết quả",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                _row("Nhận dạng:", detected),
-                _row("Số trái:", count),
-                _row("Độ tin cậy:", "${(confidence * 100).round()}%"),
-                _row("Tình trạng:", status),
-              ],
-            )
-          : const Text(
-              "Chưa có dữ liệu.\nTải video hoặc bật webcam để phân tích.",
-              style: TextStyle(fontSize: 15),
-            ),
-    );
-  }
-
-  Widget _row(String a, String b) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              a,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              b,
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 15),
-            ),
-          ),
-        ],
-      ),
-    );
+  String _labelVN(String key) {
+    switch (key) {
+      case "mit_chin":
+        return "Mít chín";
+      case "mit_non":
+        return "Mít non";
+      case "mit_saubenh":
+        return "Mít sâu bệnh";
+    }
+    return key;
   }
 }

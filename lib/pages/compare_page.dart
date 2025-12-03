@@ -25,20 +25,20 @@ class _ComparePageState extends State<ComparePage> {
     fToast = FToast();
   }
 
-  // ================== TOAST ĐẸP ==================
+  // ================== TOAST ==================
   void showToast(String message, {bool success = true}) {
     fToast.removeQueuedCustomToasts();
 
-    final toast = Container(
+    Widget toast = Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -47,16 +47,10 @@ class _ComparePageState extends State<ComparePage> {
         children: [
           Icon(
             success ? Icons.check_circle : Icons.error,
-            color: success ? const Color(0xFF6DBE45) : Colors.red,
-            size: 24,
+            color: success ? Colors.green : Colors.red,
           ),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              message,
-              style: const TextStyle(color: Colors.black87, fontSize: 15),
-            ),
-          ),
+          const SizedBox(width: 10),
+          Flexible(child: Text(message, style: const TextStyle(fontSize: 15))),
         ],
       ),
     );
@@ -68,7 +62,7 @@ class _ComparePageState extends State<ComparePage> {
     );
   }
 
-  // ================== Lưu lịch sử vào Supabase ==================
+  // ================== SAVE HISTORY ==================
   Future<void> saveCompareHistory() async {
     try {
       final supabase = Supabase.instance.client;
@@ -87,44 +81,38 @@ class _ComparePageState extends State<ComparePage> {
 
       showToast("Đã lưu lịch sử so sánh");
     } catch (e) {
-      debugPrint("SAVE ERROR: $e");
-      showToast("Lưu thất bại!", success: false);
+      showToast("Lỗi khi lưu!", success: false);
     }
   }
 
-  // ================== Convert chuỗi sang double ==================
+  // ================== PARSE CSV ==================
   double toDouble(String? v) {
     if (v == null) return 0.0;
     return double.tryParse(v.trim()) ?? 0.0;
   }
 
-  // ================== Parse CSV YOLO ==================
   Future<Map<String, double>?> parseCSV(Uint8List data) async {
     try {
-      final content = utf8.decode(data);
-      final lines = content
-          .split("\n")
-          .where((e) => e.trim().isNotEmpty)
-          .toList();
+      final csv = utf8.decode(data);
+      final lines = csv.split("\n").where((e) => e.trim().isNotEmpty).toList();
 
       if (lines.length < 2) return null;
 
       final header = lines.first.split(",");
       final last = lines.last.split(",");
 
-      Map<String, String> row = {};
+      Map<String, String> map = {};
       for (int i = 0; i < header.length; i++) {
-        row[header[i].trim().toLowerCase()] = (i < last.length)
+        map[header[i].trim().toLowerCase()] = (i < last.length)
             ? last[i].trim()
             : "0";
       }
 
-      double p = toDouble(row["metrics/precision(b)"]);
-      double r = toDouble(row["metrics/recall(b)"]);
-      double map50 = toDouble(row["metrics/map50(b)"]);
-      double map5095 = toDouble(row["metrics/map50-95(b)"]);
+      double p = toDouble(map["metrics/precision(b)"]);
+      double r = toDouble(map["metrics/recall(b)"]);
+      double map50 = toDouble(map["metrics/map50(b)"]);
+      double map5095 = toDouble(map["metrics/map50-95(b)"]);
 
-      // F1 = 2PR / (P+R)
       double f1 = (p + r == 0) ? 0 : 2 * p * r / (p + r);
 
       return {
@@ -135,17 +123,18 @@ class _ComparePageState extends State<ComparePage> {
         "map5095": map5095,
       };
     } catch (e) {
-      debugPrint("CSV ERROR: $e");
       return null;
     }
   }
 
-  // ================== Chọn file CSV ==================
+  // ================== PICK CSV ==================
   Future<void> pickCSV(bool isA) async {
     final picked = await FilePicker.platform.pickFiles(withData: true);
+
     if (picked == null || picked.files.first.bytes == null) return;
 
     final parsed = await parseCSV(picked.files.first.bytes!);
+
     if (parsed == null) {
       showToast("CSV không hợp lệ!", success: false);
       return;
@@ -154,139 +143,162 @@ class _ComparePageState extends State<ComparePage> {
     setState(() {
       if (isA) {
         modelA = parsed;
-        showToast("Model A đã tải thành công");
+        showToast("Model A đã tải ✓");
       } else {
         modelB = parsed;
-        showToast("Model B đã tải thành công");
+        showToast("Model B đã tải ✓");
       }
     });
 
-    // Auto save nếu đủ 2 model
     if (modelA != null && modelB != null) saveCompareHistory();
   }
 
-  // ================== TABLE ==================
+  // ================== UI TABLE ==================
   Widget buildTable() {
     if (modelA == null || modelB == null) return Container();
 
-    final metrics = ["precision", "recall", "f1", "map50", "map5095"];
     const labels = {
-      "precision": "PRECISION",
-      "recall": "RECALL",
-      "f1": "F1 SCORE",
+      "precision": "Precision",
+      "recall": "Recall",
+      "f1": "F1-score",
       "map50": "mAP50",
       "map5095": "mAP50-95",
     };
 
     return Card(
+      margin: const EdgeInsets.only(top: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Table(
-          border: TableBorder.all(color: Colors.grey.shade300),
-          children: [
-            TableRow(
-              decoration: BoxDecoration(color: Colors.green.shade100),
-              children: const [
+      child: Table(
+        border: TableBorder.all(color: Colors.grey.shade300),
+        children: [
+          TableRow(
+            decoration: BoxDecoration(color: Colors.green.shade100),
+            children: const [
+              Padding(
+                padding: EdgeInsets.all(14),
+                child: Text(
+                  "Chỉ số",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(14),
+                child: Text(
+                  "Model A",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(14),
+                child: Text(
+                  "Model B",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          ...labels.entries.map(
+            (e) => TableRow(
+              children: [
                 Padding(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
+                  child: Text(e.value),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(14),
                   child: Text(
-                    "Chỉ số",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    modelA![e.key]!.toStringAsFixed(4),
+                    style: const TextStyle(color: Colors.green),
                   ),
                 ),
                 Padding(
-                  padding: EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   child: Text(
-                    "Model A",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ),
-                Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Text(
-                    "Model B",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    modelB![e.key]!.toStringAsFixed(4),
+                    style: const TextStyle(color: Colors.orange),
                   ),
                 ),
               ],
             ),
-            ...metrics.map(
-              (m) => TableRow(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(labels[m]!),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(modelA![m]!.toStringAsFixed(3)),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(modelB![m]!.toStringAsFixed(3)),
-                  ),
-                ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ================== BAR CHART ==================
+  Widget buildChart() {
+    if (modelA == null || modelB == null) return Container();
+
+    final metrics = ["precision", "recall", "f1", "map50", "map5095"];
+    final labels = ["P", "R", "F1", "m50", "m50-95"];
+
+    return SizedBox(
+      height: 300,
+      child: BarChart(
+        BarChartData(
+          barGroups: List.generate(metrics.length, (i) {
+            return BarChartGroupData(
+              x: i,
+              barsSpace: 12,
+              barRods: [
+                BarChartRodData(
+                  toY: modelA![metrics[i]]!,
+                  width: 18,
+                  color: Colors.green,
+                ),
+                BarChartRodData(
+                  toY: modelB![metrics[i]]!,
+                  width: 18,
+                  color: Colors.orange,
+                ),
+              ],
+            );
+          }),
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (v, meta) => Text(labels[v.toInt()]),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  // ================== Bar Chart ==================
-  Widget buildChart() {
-    if (modelA == null || modelB == null) return const SizedBox();
-
-    const labels = ["P", "R", "F1", "m50", "m50-95"];
-    final metrics = ["precision", "recall", "f1", "map50", "map5095"];
-
-    return SizedBox(
-      height: 320,
-      child: BarChart(
-        BarChartData(
-          gridData: FlGridData(show: true, drawVerticalLine: true),
-          titlesData: FlTitlesData(
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (v, meta) => Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(labels[v.toInt()]),
-                ),
+  // ================== BANNER HƯỚNG DẪN ==================
+  Widget buildGuideBanner() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.green.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.shade300),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info, color: Colors.green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Bạn cần tải file CSV được sinh ra sau khi train YOLOv8.\n\n"
+              "📌 Đường dẫn lấy file:\n"
+              "→ runs/detect/train*/results.csv\n\n"
+              "CSV phải chứa các cột: Precision, Recall, mAP50, mAP50-95.\n"
+              "Hệ thống sẽ tự tính F1-score và so sánh 2 mô hình.",
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.green.shade900,
+                height: 1.4,
               ),
             ),
           ),
-          barGroups: List.generate(
-            metrics.length,
-            (i) => BarChartGroupData(
-              x: i,
-              barsSpace: 14,
-              barRods: [
-                BarChartRodData(
-                  toY: modelA![metrics[i]]!,
-                  width: 18,
-                  gradient: const LinearGradient(
-                    colors: [Colors.green, Colors.lightGreen],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  ),
-                ),
-                BarChartRodData(
-                  toY: modelB![metrics[i]]!,
-                  width: 18,
-                  gradient: const LinearGradient(
-                    colors: [Colors.orange, Colors.deepOrange],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -299,17 +311,16 @@ class _ComparePageState extends State<ComparePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF9FFE8),
       appBar: AppBar(
-        title: const Text(
-          "So sánh mô hình YOLOv8",
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-        centerTitle: true,
         backgroundColor: const Color(0xFF6DBE45),
         foregroundColor: Colors.white,
+        title: const Text("So sánh mô hình YOLOv8"),
+        centerTitle: true,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          buildGuideBanner(),
+
           uploadCard("Tải CSV cho Model A", Colors.green, () => pickCSV(true)),
           const SizedBox(height: 16),
           uploadCard(
@@ -317,20 +328,20 @@ class _ComparePageState extends State<ComparePage> {
             Colors.orange,
             () => pickCSV(false),
           ),
-          const SizedBox(height: 16),
+
           if (modelA != null && modelB != null) buildTable(),
+          if (modelA != null && modelB != null) const SizedBox(height: 16),
           if (modelA != null && modelB != null) buildChart(),
         ],
       ),
     );
   }
 
-  // ================== Upload Button ==================
   Widget uploadCard(String label, Color color, VoidCallback onTap) {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ListTile(
-        leading: Icon(Icons.file_upload_outlined, color: color, size: 32),
+        leading: Icon(Icons.upload_file, color: color, size: 32),
         title: Text(label),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: onTap,
