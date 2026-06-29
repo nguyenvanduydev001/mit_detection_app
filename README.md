@@ -4,6 +4,12 @@ AgriVision là ứng dụng Flutter dùng AI để nhận dạng và phân loạ
 
 ---
 
+## 🎬 Demo
+
+🔗 [https://youtu.be/8wsyiZMRbt4?si=yC9lh5dFNW0Qq_z_](https://youtu.be/8wsyiZMRbt4?si=yC9lh5dFNW0Qq_z_)
+
+---
+
 ## Tóm tắt chức năng chính
 
 | Tính năng | Mô tả ngắn |
@@ -145,4 +151,5 @@ Gợi ý: cột `created_at` mặc định = now(); `user_id` liên kết tới 
 
 ---
 
-## Người thực hiện Nguyễn Văn Duy  
+## Người thực hiện
+- Nguyễn Văn Duy
